@@ -12,6 +12,7 @@ class ChatMemory:
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    message_id TEXT UNIQUE,
                     thread_id TEXT,
                     sender_id TEXT,
                     text TEXT,
@@ -20,13 +21,17 @@ class ChatMemory:
             ''')
             conn.commit()
 
-    def add_message(self, thread_id, sender_id, text):
+    def add_message(self, thread_id, sender_id, text, message_id=None):
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                'INSERT INTO messages (thread_id, sender_id, text) VALUES (?, ?, ?)',
-                (thread_id, sender_id, text)
-            )
-            conn.commit()
+            try:
+                conn.execute(
+                    'INSERT INTO messages (thread_id, sender_id, text, message_id) VALUES (?, ?, ?, ?)',
+                    (thread_id, sender_id, text, message_id)
+                )
+                conn.commit()
+            except sqlite3.IntegrityError:
+                # Message already exists
+                pass
 
     def get_history(self, thread_id, limit=10):
         with sqlite3.connect(self.db_path) as conn:
@@ -45,3 +50,13 @@ class ChatMemory:
             )
             row = cursor.fetchone()
             return row and row[0] == "me"
+
+    def message_exists(self, message_id):
+        if not message_id:
+            return False
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                'SELECT 1 FROM messages WHERE message_id = ?',
+                (message_id,)
+            )
+            return cursor.fetchone() is not None

@@ -1,3 +1,5 @@
 instagrapi
 openai>=1.0.0
 python-dotenv
+Pillow
+pydantic
