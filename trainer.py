@@ -10,12 +10,30 @@ def get_ig_client():
     cl = Client()
     session_file = "session.json"
     if os.path.exists(session_file):
-        cl.load_settings(session_file)
+        try:
+            cl.load_settings(session_file)
+            print("Loaded session from file.")
+        except Exception as e:
+            print(f"Could not load session: {e}")
     
     username = os.getenv("IG_USERNAME")
     password = os.getenv("IG_PASSWORD")
     
-    cl.login(username, password)
+    if not username or not password:
+        raise ValueError("IG_USERNAME or IG_PASSWORD not found in environment variables")
+    
+    try:
+        if not cl.user_id:
+            print("Attempting login...")
+            cl.login(username, password)
+        else:
+            # Test the session
+            cl.get_timeline_feed()
+            print("Session is still valid.")
+    except Exception as e:
+        print(f"Login failed or session expired: {e}. Attempting fresh login.")
+        cl.login(username, password)
+
     cl.dump_settings(session_file)
     return cl
 
@@ -38,16 +56,20 @@ def fetch_my_messages(cl, limit=100):
 
 def generate_persona(messages):
     print(f"Analyzing {len(messages)} messages with OpenAI...")
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY not found in environment variables")
+    client = OpenAI(api_key=api_key)
     
     prompt = f"""
     Analyze the following messages sent by a user on Instagram. 
     Extract their personality, tone, vocabulary, and style.
-    Create a JSON object representing their 'persona' with the following fields:
-    - tone: (e.g., casual, professional, witty, empathetic)
-    - vocabulary: (notable words or phrases they use often)
-    - rules: (any consistent behavior patterns like using emojis, length of responses)
-    - summary: (a short paragraph describing who they are)
+    Create a JSON object representing their 'persona' that will be used to guide an AI to respond exactly like them.
+    The JSON should have the following fields:
+    - tone: A description of their overall tone (e.g., casual, professional, witty, empathetic).
+    - vocabulary: A list of notable words, phrases, or slang they use often.
+    - rules: A list of consistent behavior patterns (e.g., "always uses lowercase", "uses lots of emojis", "keeps responses under 10 words", "never uses punctuation").
+    - summary: A short paragraph describing who they are and how they interact with others.
 
     Messages:
     {chr(10).join(messages[:50])}

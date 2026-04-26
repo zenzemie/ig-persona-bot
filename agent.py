@@ -12,11 +12,16 @@ load_dotenv()
 class InstagramAgent:
     def __init__(self):
         self.cl = Client()
-        self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY not found in environment variables")
+        self.openai_client = OpenAI(api_key=api_key)
         self.memory = ChatMemory()
         self.persona = self._load_persona()
         self.username = os.getenv("IG_USERNAME")
         self.password = os.getenv("IG_PASSWORD")
+        if not self.username or not self.password:
+            raise ValueError("IG_USERNAME or IG_PASSWORD not found in environment variables")
         self.session_file = "session.json"
 
     def _load_persona(self):
@@ -34,15 +39,26 @@ class InstagramAgent:
         if os.path.exists(self.session_file):
             try:
                 self.cl.load_settings(self.session_file)
-                self.cl.login(self.username, self.password)
+                print("Loaded session from file.")
             except Exception as e:
-                print(f"Session login failed: {e}. Attempting fresh login.")
+                print(f"Could not load session: {e}")
+
+        try:
+            # Check if we are already logged in
+            if not self.cl.user_id:
+                print("Attempting login...")
                 self.cl.login(self.username, self.password)
-        else:
+            else:
+                # Test the session
+                self.cl.get_timeline_feed()
+                print("Session is still valid.")
+        except Exception as e:
+            print(f"Login failed or session expired: {e}. Attempting fresh login.")
             self.cl.login(self.username, self.password)
         
         self.cl.dump_settings(self.session_file)
         self.my_id = self.cl.user_id
+        print(f"Logged in as user ID: {self.my_id}")
 
     def get_response(self, thread_id, user_text):
         history = self.memory.get_history(thread_id)
@@ -77,8 +93,8 @@ class InstagramAgent:
                         continue
                     
                     last_msg = messages[0]
-                    if str(last_msg.user_id) == str(self.my_id):
-                        continue # Already replied or it's my own message
+                    if str(last_msg.user_id) == str(self.my_id) or not last_msg.text:
+                        continue
                     
                     print(f"New message from {last_msg.user_id}: {last_msg.text}")
                     
@@ -89,17 +105,19 @@ class InstagramAgent:
                     if not self.memory.is_last_message_from_me(thread.id):
                         response_text = self.get_response(thread.id, last_msg.text)
                         
+                        # Simulate typing delay
+                        typing_time = len(response_text) * 0.05 + random.uniform(1, 3)
+                        print(f"Simulating typing for {typing_time:.2f}s...")
+                        time.sleep(min(typing_time, 10))
+                        
                         self.cl.direct_send(response_text, thread_ids=[thread.id])
                         print(f"Sent response: {response_text}")
                         
                         # Store my message
                         self.memory.add_message(thread.id, "me", response_text)
                         
-                        # Mark as read
-                        self.cl.direct_thread_mark_unread(thread.id) # Wait, mark_unread? No, mark as read is usually default after fetching? 
-                        # Actually instagrapi has direct_answer which can be used, or just sending.
-                        # To mark as read:
-                        self.cl.direct_send_seen(thread.id)
+                    # Mark as read
+                    self.cl.direct_send_seen(thread.id)
 
                 # Random sleep to avoid rate limiting
                 sleep_time = random.randint(60, 120)
