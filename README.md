@@ -11,17 +11,35 @@ An autonomous Instagram DM AI Agent that mirrors your personality.
 
 ## Setup
 
+### Option 1: Desktop (PC/Mac/Linux)
 1. Clone the repository.
 2. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
-3. Create a `.env` file based on `.env.example` and fill in your credentials:
+3. Create a `.env` file based on `.env.example` and fill in your credentials.
+
+### Option 2: Mobile (Android via Termux)
+Recommended for absolute beginners and to avoid credit card requirements.
+
+1. **Install Termux**: Download from [F-Droid](https://f-droid.org/en/packages/com.termux/) (the Google Play version is outdated).
+2. **Setup Environment**: Open Termux and run:
+   ```bash
+   pkg update && pkg upgrade
+   pkg install git python python-dev clang libjpeg-turbo
    ```
-   IG_USERNAME=your_username
-   IG_PASSWORD=your_password
-   OPENAI_API_KEY=your_openai_api_key
+3. **Clone & Install**:
+   ```bash
+   git clone <your-repo-url>
+   cd ig-persona-bot
+   pip install -r requirements.txt
    ```
+4. **Configure**: Create your `.env` file:
+   ```bash
+   nano .env
+   ```
+   (Paste your credentials, then press `Ctrl+O`, `Enter`, `Ctrl+X`)
+5. **Keep Alive**: Run `termux-wake-lock` to prevent Android from killing the process.
 
 ## Usage
 
@@ -39,14 +57,23 @@ python agent.py
 
 ## Deployment
 
-This project is ready for deployment on **Render** or any platform supporting **Docker**.
+### Hugging Face Spaces (Free Cloud Hosting)
+1. Create a new **Space** on [Hugging Face](https://huggingface.co/new-space).
+2. Select **Docker** as the SDK.
+3. Upload all project files or connect your GitHub repository.
+4. Go to **Settings** > **Variables and secrets** and add:
+   - `IG_USERNAME`
+   - `IG_PASSWORD`
+   - `OPENAI_API_KEY`
+5. The bot will start automatically using `start.sh`.
 
-- `Dockerfile`: Container configuration.
-- `render.yaml`: Configuration for Render worker.
-- `start.sh`: Entrypoint script.
+*Note: Free Spaces go to sleep after 48h of inactivity. Use a service like [UptimeRobot](https://uptimerobot.com/) to ping your Space's URL and keep it awake.*
 
-## Caution
+### Render
+This project includes a `render.yaml` for easy deployment as a Background Worker on Render.
 
-- Instagram may flag automated accounts. Use with caution and at your own risk.
-- The bot includes random sleep intervals to minimize the risk of being banned.
-- Initial login might require manual intervention if 2FA is enabled.
+## Important Notes
+
+- **Persistence**: Free hosting like Hugging Face and Render have ephemeral storage. Your `memory.db` and `persona.json` will be lost if the container restarts. For long-term use, Termux (on a phone) is better as it keeps files locally.
+- **Instagram Challenges**: If Instagram asks for a security code, Termux is easier because you can handle the challenge directly in the terminal.
+- **Safety**: Instagram may flag automated accounts. Use with caution. The bot includes random sleep intervals to minimize risk.
