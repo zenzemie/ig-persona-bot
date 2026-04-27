@@ -39,7 +39,7 @@ def get_ig_client():
 
 def fetch_my_messages(cl, limit=100):
     print("Fetching sent messages to build persona...")
-    threads = cl.direct_threads(limit=50)
+    threads = cl.direct_threads(amount=50)
     my_messages = []
     my_id = cl.user_id
     
