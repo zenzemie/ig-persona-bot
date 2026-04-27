@@ -21,7 +21,8 @@ class InstagramAgent:
         self.username = os.getenv("IG_USERNAME")
         self.password = os.getenv("IG_PASSWORD")
         if not self.username or not self.password:
-            raise ValueError("IG_USERNAME or IG_PASSWORD not found in environment variables")
+            # For local dev, we might not have these yet
+            print("Warning: IG_USERNAME or IG_PASSWORD not found in environment variables")
         self.session_file = "session.json"
 
     def _load_persona(self):
@@ -32,13 +33,17 @@ class InstagramAgent:
             except Exception as e:
                 print(f"Error loading persona.json: {e}")
         return {
-            "tone": "friendly and helpful",
-            "vocabulary": [],
-            "rules": [],
-            "summary": "A helpful assistant."
+            "tone": "casual",
+            "vocabulary": ["Ion", "frl", "odin din done"],
+            "rules": ["always use lowercase", "no periods"],
+            "summary": "a casual person"
         }
 
     def login(self):
+        if not self.username or not self.password:
+            print("Login failed: Missing credentials.")
+            return False
+
         if os.path.exists(self.session_file):
             try:
                 self.cl.load_settings(self.session_file)
@@ -51,15 +56,21 @@ class InstagramAgent:
                 print("Attempting login...")
                 self.cl.login(self.username, self.password)
             else:
-                self.cl.get_timeline_feed()
-                print("Session is still valid.")
+                # Test if session is still valid
+                try:
+                    self.cl.get_timeline_feed()
+                    print("Session is still valid.")
+                except:
+                    print("Session expired. Re-logging in...")
+                    self.cl.login(self.username, self.password)
         except Exception as e:
-            print(f"Login failed or session expired: {e}. Attempting fresh login.")
-            self.cl.login(self.username, self.password)
+            print(f"Login failed: {e}")
+            return False
         
         self.cl.dump_settings(self.session_file)
         self.my_id = self.cl.user_id
         print(f"Logged in as user ID: {self.my_id}")
+        return True
 
     def get_response(self, thread_id, user_text):
         history = self.memory.get_history(thread_id)
@@ -68,22 +79,31 @@ class InstagramAgent:
         You are an AI version of this persona:
         {json.dumps(self.persona, indent=2)}
         
-        Respond to the user's message in a way that perfectly mirrors this persona.
-        Keep it natural for Instagram DMs. Do not mention you are an AI.
+        IMPORTANT RULES:
+        1. ALWAYS use lowercase ONLY.
+        2. NEVER use periods at the end of sentences.
+        3. Split your thoughts into multiple short messages using newlines.
+        4. Respond to the user's message in a way that perfectly mirrors this persona.
+        5. Keep it natural for Instagram DMs. Do not mention you are an AI.
+        6. Use slang like 'Ion', 'frl', and 'odin din done' naturally.
         """
         
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(history)
-        # The user_text is already added to memory before calling this, but for the very first message 
-        # or if we want to be explicit, we can ensure the history includes the latest message.
-        # In our run() loop, we add to memory first. So history already has it.
         
-        response = self.openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=messages
-        )
-        
-        return response.choices[0].message.content
+        try:
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o",
+                messages=messages
+            )
+            content = response.choices[0].message.content
+            
+            # Enforce lowercase and no periods programmatically
+            content = content.lower().replace('.', '')
+            return content
+        except Exception as e:
+            print(f"Error calling OpenAI: {e}")
+            return "my bad i can't think rn"
 
     def run(self):
         print("Agent started. Polling for messages...")
@@ -105,53 +125,64 @@ class InstagramAgent:
                                 self.memory.add_message(thread.id, msg.user_id, msg.text, msg.id)
                                 new_messages_from_user.append(msg.text)
                         elif str(msg.user_id) == str(self.my_id):
-                            # Record my own messages if they aren't in memory
                             if not self.memory.message_exists(msg.id):
                                 self.memory.add_message(thread.id, "me", msg.text, msg.id)
 
                     if new_messages_from_user:
-                        # We have new messages to respond to
-                        # If there were multiple messages, we combine them or just respond to the last one
-                        # Here we use the whole history which now includes all of them
                         last_text = new_messages_from_user[-1]
                         
-                        # Random delay before starting to "type" (human-like hesitation)
-                        time.sleep(random.uniform(2, 5))
+                        # Initial hesitation delay
+                        time.sleep(random.uniform(1, 3))
                         
-                        response_text = self.get_response(thread.id, last_text)
+                        full_response = self.get_response(thread.id, last_text)
                         
-                        # Simulate typing delay based on response length
-                        # Average typing speed is ~40-60 wpm, roughly 3-5 characters per second
-                        typing_speed = random.uniform(0.1, 0.2) 
-                        typing_time = len(response_text) * typing_speed + random.uniform(1, 3)
-                        print(f"Simulating typing for {typing_time:.2f}s...")
-                        time.sleep(min(typing_time, 15)) # Cap typing delay
+                        # Split response by newlines for "yapping style"
+                        messages_to_send = [m.strip() for m in full_response.split('\n') if m.strip()]
                         
-                        sent_msg = self.cl.direct_send(response_text, thread_ids=[thread.id])
-                        print(f"Sent response: {response_text}")
+                        for part in messages_to_send:
+                            # Simulate typing delay
+                            typing_speed = random.uniform(0.04, 0.08) # Realistic typing speed
+                            typing_time = len(part) * typing_speed + random.uniform(0.5, 1.5)
+                            print(f"Simulating typing for {typing_time:.2f}s: {part}")
+                            
+                            time.sleep(min(typing_time, 10))
+                            
+                            try:
+                                sent_msg = self.cl.direct_send(part, thread_ids=[thread.id])
+                                if hasattr(sent_msg, 'id'):
+                                    self.memory.add_message(thread.id, "me", part, sent_msg.id)
+                                else:
+                                    self.memory.add_message(thread.id, "me", part, f"sent_{int(time.time())}_{random.randint(0,1000)}")
+                            except Exception as e:
+                                print(f"Error sending message: {e}")
+                            
+                            # Small gap between messages
+                            time.sleep(random.uniform(0.5, 2.0))
                         
-                        # Store my response in memory
-                        # sent_msg is a DirectMessage object
-                        self.memory.add_message(thread.id, "me", response_text, sent_msg.id)
-                        
-                        # Mark as read
+                        # Mark thread as seen
                         self.cl.direct_send_seen(thread.id)
 
-                # Random sleep to avoid rate limiting and look human
-                # Vary between short checks and longer breaks
-                if random.random() < 0.1: # 10% chance of a longer break
-                    sleep_time = random.randint(300, 600)
+                # Human-like polling
+                if random.random() < 0.05: # 5% chance of a long break
+                    sleep_time = random.randint(600, 1500)
                 else:
-                    sleep_time = random.randint(60, 180)
+                    sleep_time = random.randint(45, 120)
                     
                 print(f"Sleeping for {sleep_time} seconds...")
                 time.sleep(sleep_time)
 
             except Exception as e:
                 print(f"Error in main loop: {e}")
-                time.sleep(60)
+                if "429" in str(e):
+                    time.sleep(900)
+                else:
+                    time.sleep(120)
 
 if __name__ == "__main__":
     agent = InstagramAgent()
-    agent.login()
-    agent.run()
+    if agent.login():
+        agent.run()
+    else:
+        print("Initial login failed. Waiting 5 minutes before retry...")
+        time.sleep(300)
+        # In a real 24/7 environment, you might want a loop here or let the orchestrator restart the container
